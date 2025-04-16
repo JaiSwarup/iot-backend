@@ -4,8 +4,19 @@ import numpy as np
 import pandas as pd
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
+origins = [
+    "*",
+]
 app = FastAPI()
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 data = {
   'C12B273': {
