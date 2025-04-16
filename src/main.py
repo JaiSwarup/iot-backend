@@ -2,8 +2,10 @@ import os
 import joblib
 import numpy as np
 import pandas as pd
+import thingspeak
+import json
 
-from fastapi import FastAPI
+from fastapi import FastAPI, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 
 origins = [
@@ -24,7 +26,7 @@ data = {
     'backlog': 100,
     'overtime': 100,
     'credits': 100,
-    'idle_time': 20,
+    'idle': 20,
   },
   '59BAAF2': {
     'name': 'Rahul',
@@ -43,12 +45,12 @@ class ProductivityModel:
     self.model = joblib.load('models/rf_model.joblib')
     pass
   
-  def predict(self, id : str):
+  def predict(self, id : str, data):
     data = {
-      'wip': data[id]['backlog'],
-      'over_time': data[id]['overtime'],
-      "incentive": data[id]['credits'],
-      "idle_time": data[id]['idle']
+      'wip': [data[id]['backlog']],
+      'over_time': [data[id]['overtime']],
+      "incentive": [data[id]['credits']],
+      "idle_time": [data[id]['idle']]
     }
     return self.model.predict(pd.DataFrame(data))
 
@@ -75,7 +77,14 @@ def get_users():
 def get_user_data(id: str):
   """Get user data."""
   try: 
-    return data[id]
+    ch = thingspeak.Channel(2735560)
+    feed_data = json.loads(ch.get('feeds'))
+    user_data = [item for item in feed_data['feeds'] if item['field1'] == id]
+    return {
+      "profile" : data[id],
+      "entries": [{'timestamp': item['created_at'], 'value': item['field4']} for item in user_data],
+      "prediction": productivity.predict(id, data).tolist()[0]
+      }
   except Exception as e: 
     return e.__str__()
 
@@ -85,9 +94,22 @@ def predict_productivity(id: str):
   Predicting an employee's productivity
   """
   try: 
-    return productivity.predict(id).tolist()
+    
+    return {
+        "id": id,
+        "name": data[id]['name'],
+        'prediction' : productivity.predict(id, data).tolist()[0]
+      }
   except Exception as e:
     return e.__str__()
+  
+@app.get('/things')
+def get_things():
+  try:
+    ch = thingspeak.Channel(2735560)
+    return json.loads(ch.get('feeds'))
+  except Exception as e:
+    return e
 
 if __name__ == "__main__":
   app.run(debug=True, host="0.0.0.0", port=int(os.environ.get("PORT", 3000)))
