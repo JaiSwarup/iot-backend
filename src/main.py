@@ -1,10 +1,11 @@
 import os
 import joblib
-import numpy as np
 import pandas as pd
 import thingspeak
 import json
+import asyncio
 
+from datetime import datetime
 from fastapi import FastAPI, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -47,7 +48,7 @@ class ProductivityModel:
   
   def predict(self, id : str, data):
     data = {
-      'wip': [data[id]['backlog']],
+      'wip': [data[id]['backlog']],  
       'over_time': [data[id]['overtime']],
       "incentive": [data[id]['credits']],
       "idle_time": [data[id]['idle']]
@@ -84,7 +85,7 @@ def get_user_data(id: str):
       "profile" : data[id],
       "entries": [{'timestamp': item['created_at'], 'value': item['field4']} for item in user_data],
       "prediction": productivity.predict(id, data).tolist()[0]
-      }
+    }
   except Exception as e: 
     return e.__str__()
 
@@ -99,17 +100,34 @@ def predict_productivity(id: str):
         "id": id,
         "name": data[id]['name'],
         'prediction' : productivity.predict(id, data).tolist()[0]
-      }
+    }
   except Exception as e:
     return e.__str__()
   
 @app.get('/things')
 def get_things():
   try:
-    ch = thingspeak.Channel(2735560)
-    return json.loads(ch.get('feeds'))
+    return get_feed_data()
   except Exception as e:
     return e
 
-if __name__ == "__main__":
-  app.run(debug=True, host="0.0.0.0", port=int(os.environ.get("PORT", 3000)))
+def get_feed_data():
+  ch = thingspeak.Channel(2735560)
+  return json.loads(ch.get('feeds'))
+
+@app.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket):
+    await websocket.accept()
+    while True:
+      feed_data = get_feed_data()
+      results = {}
+      for feed in feed_data['feeds']:
+        field1 = feed.get('field1')
+        field2 = feed.get('field2')
+        field3 = feed.get('field3')
+        field4 = feed.get('field4')
+        if field1 and field4:
+          results[field2] = {'status': "IN" if field4 == "IN" else "OUT"}
+      
+      await websocket.send_json(results)
+      await asyncio.sleep(15)
