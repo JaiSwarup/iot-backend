@@ -130,4 +130,17 @@ async def websocket_endpoint(websocket: WebSocket):
           results[field2] = {'status': "IN" if field4 == "IN" else "OUT"}
       
       await websocket.send_json(results)
-      await asyncio.sleep(15)
+
+
+times = []
+@app.websocket("/feed")
+async def websocket_endpoint(websocket: WebSocket):
+    await websocket.accept()
+    while True:
+      feed_data = get_feed_data()
+      if (len(feed_data['feeds']) > len(times)):
+        times.append(feed_data['feeds'][-1])
+      
+      
+      await websocket.send_json(times)
+      await asyncio.sleep(30)
